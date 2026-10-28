@@ -1,0 +1,4 @@
+node_modules/
+reports/
+server/*.db*
+client/dist/
