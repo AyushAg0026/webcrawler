@@ -14,20 +14,46 @@ const MAX_PAGES_LIMIT = 50;
 const app = express();
 app.use(express.json());
 
+// Live progress of running scans (current URL, finished pages). It's only
+// needed while a scan runs, so it lives in memory instead of the database.
+const liveProgress = new Map();
+
+function summarizePage(page) {
+  return {
+    url: page.url,
+    title: page.title ?? null,
+    status: page.status,
+    error: page.error ?? null,
+    score: page.score,
+    violationCount: page.violations.reduce((sum, v) => sum + v.elements.length, 0),
+  };
+}
+
 // Scanning takes seconds to minutes, too long to keep an HTTP request open.
 // So we save a "running" scan, reply right away with 202 Accepted, and the
 // client polls GET /api/scans/:id until the status is "done" or "failed".
 async function runScanInBackground(scanId, startUrl, maxPages) {
+  const live = { pagesDiscovered: 1, currentUrl: startUrl, pages: [] };
+  liveProgress.set(scanId, live);
   try {
     const scan = await scanSite(startUrl, {
       maxPages,
-      onProgress: ({ scanned }) => store.updateProgress(scanId, scanned),
+      onPageStart: (url) => {
+        live.currentUrl = url;
+      },
+      onProgress: ({ scanned, discovered, page }) => {
+        store.updateProgress(scanId, scanned);
+        live.pagesDiscovered = discovered;
+        live.pages.push(summarizePage(page));
+      },
     });
     store.completeScan(scanId, scan);
     console.log(`Scan ${scanId} done: ${scan.score}/100`);
   } catch (err) {
     store.failScan(scanId, err.message);
     console.error(`Scan ${scanId} failed: ${err.message}`);
+  } finally {
+    liveProgress.delete(scanId);
   }
 }
 
@@ -60,6 +86,7 @@ app.get('/api/scans', (req, res) => {
 app.get('/api/scans/:id', (req, res) => {
   const scan = store.getScan(Number(req.params.id));
   if (!scan) return res.status(404).json({ error: 'Scan not found.' });
+  if (scan.status === 'running') scan.progress = liveProgress.get(scan.id) ?? null;
   res.json(scan);
 });
 

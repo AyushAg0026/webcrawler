@@ -53,7 +53,7 @@ async function getRobots(origin, cache) {
  * Crawls from startUrl and returns the full scan: every page's results plus
  * the site-level score and the worst pages.
  */
-export async function scanSite(startUrl, { maxPages = 20, delayMs = 500, onProgress } = {}) {
+export async function scanSite(startUrl, { maxPages = 20, delayMs = 500, onPageStart, onProgress } = {}) {
   const start = normalizeUrl(validateUrl(startUrl));
   const startedAt = new Date().toISOString();
 
@@ -85,6 +85,7 @@ export async function scanSite(startUrl, { maxPages = 20, delayMs = 500, onProgr
         await sleep(Math.max(delayMs, crawlDelay));
       }
 
+      onPageStart?.(url);
       let links = [];
       try {
         const { links: found, ...result } = await scanPage(url, { browser });
@@ -96,8 +97,6 @@ export async function scanSite(startUrl, { maxPages = 20, delayMs = 500, onProgr
         // One broken page shouldn't stop the whole crawl.
         pages.push({ url, status: 'failed', error: err.message, score: null, violations: [] });
       }
-      onProgress?.({ scanned: pages.length, maxPages, url });
-
       for (const link of links) {
         const next = normalizeUrl(link);
         if (next && allowedHosts.has(new URL(next).hostname) && !visited.has(next)) {
@@ -105,6 +104,8 @@ export async function scanSite(startUrl, { maxPages = 20, delayMs = 500, onProgr
           queue.push(next);
         }
       }
+      // `discovered` = every URL found so far (scanned + still queued).
+      onProgress?.({ scanned: pages.length, maxPages, url, discovered: visited.size, page: pages.at(-1) });
     }
   } finally {
     await browser.close();

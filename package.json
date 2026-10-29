@@ -7,6 +7,7 @@
     "scan": "node scanner/cli.js",
     "server": "node server/index.js",
     "client": "npm --prefix client run dev",
+    "client:real": "npm --prefix client run dev:real",
     "build": "npm --prefix client run build",
     "start": "npm run build && npm run server"
   },

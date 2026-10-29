@@ -119,10 +119,16 @@ export const completeScan = db.transaction((scanId, scan) => {
     .run(scan.score, scan.pageCount, scan.finishedAt, scanId);
 });
 
+// Total affected elements in a scan, used by the list and history views.
+const VIOLATION_COUNT = `(
+  SELECT COALESCE(SUM(v.element_count), 0) FROM violations v
+  JOIN pages p ON p.id = v.page_id WHERE p.scan_id = scans.id
+) AS violationCount`;
+
 const SCAN_COLUMNS = `
   scans.id, sites.domain, scans.start_url AS startUrl, scans.status, scans.score,
   scans.max_pages AS maxPages, scans.page_count AS pageCount, scans.error,
-  scans.started_at AS startedAt, scans.finished_at AS finishedAt`;
+  scans.started_at AS startedAt, scans.finished_at AS finishedAt, ${VIOLATION_COUNT}`;
 
 export function listScans(limit = 50) {
   return db
@@ -166,7 +172,7 @@ export function getSiteHistory(domain) {
   const site = db.prepare('SELECT id FROM sites WHERE domain = ?').get(domain);
   if (!site) return null;
   return db
-    .prepare(`SELECT id AS scanId, score, page_count AS pageCount, finished_at AS finishedAt
+    .prepare(`SELECT id AS scanId, score, page_count AS pagesScanned, finished_at AS finishedAt, ${VIOLATION_COUNT}
               FROM scans WHERE site_id = ? AND status = 'done' ORDER BY finished_at`)
     .all(site.id);
 }
